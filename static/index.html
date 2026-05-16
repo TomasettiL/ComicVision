@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ComicVision</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="app">
+
+    <header class="header">
+      <div class="logo">
+        <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/>
+        </svg>
+        <span class="logo-text">ComicVision</span>
+      </div>
+      <p class="tagline">Edge detection &amp; comic-style image processing</p>
+    </header>
+
+    <main class="main">
+
+      <!-- ── Controls sidebar ── -->
+      <aside class="controls">
+
+        
+
+        <section class="control-section">
+          <div class="section-header">
+            <h3 class="section-title">Layers</h3>
+            <span class="layer-mode-badge" data-tip="Two-stage compositor. Colour layers (yellow) chain sequentially to build a flat colour base. Edge layers (blue) run on the original and composite with darken mode. The edge mask is then painted black onto the colour base.">layered composite</span>
+          </div>
+          <div class="layer-list" id="layerList">
+            <!-- Layer cards injected by JS -->
+          </div>
+          <button class="btn-add-layer" id="addLayerBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="13" height="13"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Layer
+          </button>
+        </section>
+
+        <section class="control-section">
+          <h3 class="section-title">Video</h3>
+          <label class="param-checkbox">
+            <input type="checkbox" id="convertFps">
+            <span>Convert to 24 fps</span>
+          </label>
+          <p style="font-size:11px;color:var(--muted);margin-top:4px;line-height:1.5">
+            Drops frames to the standard anime &amp; film framerate. Ignored for images and videos already at or below 24 fps.
+          </p>
+        </section>
+
+      </aside>
+
+      <!-- ── Output panel ── -->
+      <div class="output-panel">
+
+        <!-- Upload view (default) -->
+        <div id="uploadView">
+          <div class="upload-area" id="uploadArea">
+            <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <polyline points="16 16 12 12 8 16"/>
+              <line x1="12" y1="12" x2="12" y2="21"/>
+              <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+            </svg>
+            <p class="upload-text">Drop image or video here</p>
+            <p class="upload-sub">PNG, JPG, MP4, MOV &amp; more</p>
+            <input type="file" id="fileInput" accept="image/*,video/mp4,video/avi,video/mov,video/mkv,video/webm" hidden>
+          </div>
+          <div class="file-info" id="fileInfo" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="flex-shrink:0;color:var(--accent)">
+              <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/>
+            </svg>
+            <span class="file-name" id="fileName"></span>
+            <button class="btn-icon btn-clear" id="clearFile" title="Remove file">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <button class="btn-process" id="processBtn" disabled>
+            <svg id="processBtnIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="16" height="16">
+              <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+            <span id="processBtnLabel">Process</span>
+          </button>
+        </div>
+
+        <!-- Result view (shown after processing) -->
+        <div id="resultView" hidden>
+
+          <div class="preview-area" id="previewArea">
+
+            <!-- Image result -->
+            <div class="image-result" id="imageResult" hidden>
+              <img id="processedImg" alt="Processed image">
+            </div>
+
+            <!-- Video side-by-side -->
+            <div class="video-compare" id="videoCompare" hidden>
+              <div class="video-pane">
+                <span class="compare-label-inline">Original</span>
+                <video id="originalVideo" controls loop muted playsinline></video>
+              </div>
+              <div class="video-pane">
+                <span class="compare-label-inline">Processed</span>
+                <div class="video-placeholder" id="videoPlaceholder">Process the video to see the result</div>
+                <video id="processedVideo" controls loop muted playsinline hidden></video>
+              </div>
+            </div>
+
+            <!-- Progress -->
+            <div class="progress-wrap" id="progressWrap" hidden>
+              <div class="progress-track">
+                <div class="progress-fill" id="progressFill"></div>
+              </div>
+              <p class="progress-text" id="progressText">Processing…</p>
+            </div>
+
+          </div>
+
+          <div class="action-bar" id="actionBar" hidden>
+            <p class="action-note" id="actionNote"></p>
+            <a class="btn-download" id="downloadBtn" href="#" download>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14">
+                <polyline points="8 17 12 21 16 17"/>
+                <line x1="12" y1="12" x2="12" y2="21"/>
+                <path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/>
+              </svg>
+              Download Result
+            </a>
+            <button class="btn-upload-new" id="uploadNewBtn">↩ Upload New</button>
+          </div>
+
+        </div>
+
+      </div>
+
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
