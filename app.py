@@ -342,5 +342,5 @@ def get_result(job_id):
 
 
 if __name__ == "__main__":
-    print("ComicVision running at http://localhost:5050")
-    app.run(debug=False, port=5050, threaded=True)
+    port = int(os.environ.get("PORT", 5050))
+    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
