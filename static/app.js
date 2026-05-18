@@ -1,5 +1,6 @@
 // ── State ─────────────────────────────────────────────────────────────────────
 let filters = {};       // { name: metadata } from /filters
+let videoEnabled = false;
 let uploadedFile = null;
 let currentJobId = null;
 let pollTimer = null;
@@ -42,11 +43,19 @@ const convertFpsEl    = $('convertFps');
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 async function init() {
   try {
-    const res = await fetch('/filters');
-    filters = await res.json();
+    const [filtersRes, configRes] = await Promise.all([fetch('/filters'), fetch('/config')]);
+    filters = await filtersRes.json();
+    const config = await configRes.json();
+    videoEnabled = !!config.video_enabled;
   } catch (e) {
-    console.error('Could not load filters:', e);
+    console.error('Could not load config:', e);
     return;
+  }
+
+  // Restrict file picker and label when video is disabled
+  if (!videoEnabled) {
+    fileInput.accept = 'image/*';
+    document.querySelector('.upload-sub').textContent = 'PNG, JPG, WEBP & more';
   }
 
   setupUpload();
@@ -262,6 +271,10 @@ function setupUpload() {
 }
 
 function handleFile(file) {
+  if (!videoEnabled && file.type.startsWith('video/')) {
+    alert('Video processing is not available. Please upload an image.');
+    return;
+  }
   uploadedFile = file;
   fileNameEl.textContent = file.name;
   fileInfo.hidden = false;

@@ -1,6 +1,8 @@
+import io
 import json
 import os
 import shutil
+import tempfile
 import uuid
 import threading
 import subprocess
@@ -16,11 +18,6 @@ from filters.base import overlay_layers
 # http://127.0.0.1:5050
 
 app = Flask(__name__, static_folder="static")
-
-UPLOAD_FOLDER = "uploads"
-OUTPUT_FOLDER = "outputs"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
 VIDEO_EXTS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
 
@@ -201,18 +198,22 @@ def _apply_layers(gray: np.ndarray, bgr: np.ndarray, layer_configs: list) -> np.
     return _Compositor(layer_configs).process(gray, bgr)
 
 
-def _run_job(job_id: str, input_path: str, output_path: str,
-             layer_configs: list, is_video: bool, convert_fps: bool = False):
+def _run_job(job_id: str, file_bytes: bytes | None, input_path: str | None,
+             output_path: str | None, layer_configs: list, is_video: bool,
+             convert_fps: bool = False):
     try:
         jobs[job_id]["status"] = "processing"
 
         if not is_video:
-            bgr = cv2.imread(input_path)
+            # Fully in-memory — no disk I/O
+            arr = np.frombuffer(file_bytes, np.uint8)
+            bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
             if bgr is None:
-                raise ValueError("Could not read image file.")
+                raise ValueError("Could not decode image.")
             gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
             result = _apply_layers(gray, bgr, layer_configs)
-            cv2.imwrite(output_path, result)
+            _, buf = cv2.imencode('.png', result)
+            jobs[job_id]["result_bytes"] = buf.tobytes()
             jobs[job_id]["progress"] = 100
 
         else:
@@ -224,14 +225,12 @@ def _run_job(job_id: str, input_path: str, output_path: str,
             width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-            # Only drop frames when source is meaningfully faster than target
             output_fps = TARGET_FPS if (convert_fps and fps > TARGET_FPS + 0.5) else fps
-
             writer = _make_video_writer(output_path, output_fps, width, height)
             compositor = _Compositor(layer_configs)
 
             source_frame  = 0
-            next_out_time = 0.0   # seconds — when the next output frame is due
+            next_out_time = 0.0
 
             while True:
                 ret, frame = cap.read()
@@ -251,6 +250,14 @@ def _run_job(job_id: str, input_path: str, output_path: str,
             cap.release()
             writer.release()
             _mux_audio(output_path, input_path)
+
+            # Input temp file no longer needed after mux
+            try:
+                os.unlink(input_path)
+            except OSError:
+                pass
+
+            jobs[job_id]["output_path"] = output_path
             jobs[job_id]["progress"] = 100
 
         jobs[job_id]["status"] = "done"
@@ -307,17 +314,26 @@ def process():
     ext       = os.path.splitext(filename)[1].lower()
     is_video  = ext in VIDEO_EXTS
     job_id    = str(uuid.uuid4())
-    input_path  = os.path.join(UPLOAD_FOLDER, f"{job_id}{ext}")
-    output_path = os.path.join(OUTPUT_FOLDER, f"{job_id}{'.mp4' if is_video else '.png'}")
-
     convert_fps = request.form.get("convert_fps", "false").lower() == "true"
 
-    file.save(input_path)
-    jobs[job_id] = {"status": "queued", "progress": 0, "is_video": is_video, "output_path": output_path}
+    if is_video:
+        # Write upload to a temp file; OpenCV VideoCapture requires a path
+        in_fd, input_path  = tempfile.mkstemp(suffix=ext)
+        out_fd, output_path = tempfile.mkstemp(suffix=".mp4")
+        os.close(in_fd)
+        os.close(out_fd)
+        file.save(input_path)
+        file_bytes = None
+    else:
+        file_bytes  = file.read()
+        input_path  = None
+        output_path = None
+
+    jobs[job_id] = {"status": "queued", "progress": 0, "is_video": is_video}
 
     threading.Thread(
         target=_run_job,
-        args=(job_id, input_path, output_path, layer_configs, is_video, convert_fps),
+        args=(job_id, file_bytes, input_path, output_path, layer_configs, is_video, convert_fps),
         daemon=True,
     ).start()
 
@@ -328,7 +344,14 @@ def process():
 def job_status(job_id):
     if job_id not in jobs:
         return jsonify({"error": "Job not found"}), 404
-    return jsonify(jobs[job_id])
+    job = jobs[job_id]
+    # Omit binary result_bytes — not JSON-serializable and not needed by the client
+    return jsonify({k: v for k, v in job.items() if k != "result_bytes"})
+
+
+@app.route("/config")
+def get_config():
+    return jsonify({"video_enabled": bool(os.environ.get("ALLOW_VIDEO"))})
 
 
 @app.route("/result/<job_id>")
@@ -338,7 +361,16 @@ def get_result(job_id):
     job = jobs[job_id]
     if job["status"] != "done":
         return jsonify({"error": "Not ready yet"}), 202
-    return send_file(job["output_path"])
+
+    if job["is_video"]:
+        return send_file(job["output_path"], mimetype="video/mp4")
+
+    # Image — serve directly from memory, no file on disk
+    return send_file(
+        io.BytesIO(job["result_bytes"]),
+        mimetype="image/png",
+        download_name="result.png",
+    )
 
 
 if __name__ == "__main__":
