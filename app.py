@@ -131,7 +131,10 @@ def _coerce_params(filt, raw: dict) -> dict:
         elif p["type"] == "range":
             out[p["name"]] = float(val)
         elif p["type"] == "select":
-            out[p["name"]] = int(val)
+            try:
+                out[p["name"]] = int(val)
+            except (ValueError, TypeError):
+                out[p["name"]] = str(val)
         elif p["type"] == "checkbox":
             out[p["name"]] = val if isinstance(val, bool) else str(val).lower() in ("true", "1", "yes")
         else:

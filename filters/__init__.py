@@ -8,6 +8,7 @@ from .bilateral import BilateralFilter
 from .median_blur import MedianBlurFilter
 from .posterize import PosterizeFilter
 from .brightness import BrightnessFilter
+from .film_emulsion import FilmEmulsionFilter
 
 # Registry — add new filters here and they appear in the layer UI automatically.
 # output_type = "edge"  → grayscale, composited with darken mode
@@ -25,5 +26,6 @@ FILTERS: dict = {
         MedianBlurFilter(),
         PosterizeFilter(),
         BrightnessFilter(),
+        FilmEmulsionFilter(),
     ]
 }
